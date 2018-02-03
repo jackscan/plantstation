@@ -92,7 +92,7 @@ func (w *Wuc) DoWatering(ms int) int {
 	}
 
 	// wait for watering to finish and some margin
-	time.Sleep(time.Duration(ms+100) * time.Millisecond)
+	time.Sleep(time.Duration(ms+500) * time.Millisecond)
 
 	r, err := w.connection.ReadByte()
 
