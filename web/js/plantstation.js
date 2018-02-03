@@ -87,6 +87,15 @@ window.onload = function () {
                     fill: false
                 },
                 {
+                    type: 'line',
+                    data: [],
+                    label: "Water Level",
+                    yAxisID: 'level-y-axis',
+                    borderColor: "#001080",
+                    backgroundColor: "#0020ff",
+                    fill: false
+                },
+                {
                     type: 'bar',
                     data: [],
                     yAxisID: 'water-y-axis',
@@ -122,6 +131,10 @@ window.onload = function () {
                     position: 'left'
                 }, {
                     id: 'water-y-axis',
+                    type: 'linear',
+                    position: 'right'
+                }, {
+                    id: 'level-y-axis',
                     type: 'linear',
                     position: 'right'
                 }, {
@@ -192,7 +205,8 @@ window.onload = function () {
                     chart.data.datasets[0].data.push(data.moisture[i]);
                     chart.data.datasets[1].data.push(data.temperature[i] / 100);
                     chart.data.datasets[2].data.push(data.humidity[i] / 100);
-                    chart.data.datasets[4].data.push(w / 1000);
+                    chart.data.datasets[4].data.push(data.level[i]);
+                    chart.data.datasets[5].data.push(w / 1000);
                     avg += data.moisture[i];
                     ++count;
                     if (w > 0) {

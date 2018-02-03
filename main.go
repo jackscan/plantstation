@@ -40,6 +40,7 @@ type measurementData struct {
 	Temperature []int `json:"temperature"`
 	Humidity    []int `json:"humidity"`
 	Watering    []int `json:"water"`
+	Level       []int `json:"level"`
 	Time        int   `json:"time"`
 }
 
@@ -122,6 +123,7 @@ func main() {
 			Temperature: make([]int, 0),
 			Humidity:    make([]int, 0),
 			Watering:    make([]int, 0),
+			Level:       make([]int, 0),
 		},
 	}
 
@@ -325,6 +327,25 @@ func (s *station) update(hour int) {
 	t, h, err := s.sht.Sample()
 	if err != nil {
 		log.Printf("failed to read humidity and temperature: %v", err)
+		// fallback to last read values
+		n := len(s.Data.Humidity)
+		if n > 0 {
+			h = float32(s.Data.Humidity[n-1]) / 100
+		}
+		n = len(s.Data.Temperature)
+		if n > 0 {
+			t = float32(s.Data.Temperature[n-1]) / 100
+		}
+	}
+
+	l, err := s.wuc.ReadWaterLevel()
+	if err != nil {
+		log.Printf("failed to read water level: %v", err)
+		// fallback to last read value
+		n := len(s.Data.Level)
+		if n > 0 {
+			l = s.Data.Level[n-1]
+		}
 	}
 
 	// calculate watering time
@@ -345,6 +366,7 @@ func (s *station) update(hour int) {
 	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
 	s.Data.Watering = pushSlice(s.Data.Watering, wt, maxHours)
+	s.Data.Level = pushSlice(s.Data.Level, l, maxHours)
 }
 
 func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
