@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -144,6 +145,7 @@ func main() {
 	// }
 
 	http.Handle("/", http.FileServer(http.Dir("web")))
+	http.HandleFunc("/water", wateringHandler(&s))
 	http.HandleFunc("/calc", calcWateringHandler(&s))
 	http.HandleFunc("/moist", moistureHandler(&s))
 	http.HandleFunc("/level", waterLevelHandler(&s))
@@ -441,6 +443,31 @@ func (s *station) sendConfig(w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
+}
+
+func wateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tq, ok := r.URL.Query()["t"]
+
+		if !ok || len(tq) < 1 {
+			t, err := s.wuc.ReadLastWatering()
+			if err != nil {
+				log.Println("failed to read last watering time: ", err)
+			}
+			fmt.Fprintf(w, "%v", t)
+			return
+		}
+		t, err := strconv.Atoi(tq[0])
+		if err != nil {
+			fmt.Fprintf(w, "invalid parameter: %v", err)
+			return
+		}
+
+		log.Printf("watering %v", t)
+		t = s.wuc.DoWatering(t)
+		log.Printf("watered %v", t)
+		fmt.Fprintf(w, "%v", t)
+	}
 }
 
 func moistureHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
