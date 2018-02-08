@@ -108,6 +108,27 @@ func (w *Wuc) DoWatering(ms int) int {
 	return int(r) * 250
 }
 
+// ReadLastWatering queries duration of last watering and returns time in ms.
+func (w *Wuc) ReadLastWatering() (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if err := w.connection.WriteByte(cmdGetLastWatering); err != nil {
+		return 0, err
+	}
+
+	t, err := w.connection.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+
+	if t == 0xFF {
+		return 0, fmt.Errorf("failed to get last watering time")
+	}
+
+	return int(t) * 250, nil
+}
+
 // ReadWaterLevel sends command to measure water level and returns result.
 func (w *Wuc) ReadWaterLevel() (m int, err error) {
 	w.mutex.Lock()
