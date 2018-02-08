@@ -339,6 +339,15 @@ func (s *station) update(hour int) {
 		}
 	}
 
+	// calculate watering time
+	wt := 0
+	if hour == s.Config.WaterHour && m <= s.Config.LowLevel {
+		wt = s.calculateWatering(hour, m)
+	}
+	if wt > 0 {
+		wt = s.wuc.DoWatering(wt)
+	}
+
 	l, err := s.wuc.ReadWaterLevel()
 	if err != nil {
 		log.Printf("failed to read water level: %v", err)
@@ -347,15 +356,6 @@ func (s *station) update(hour int) {
 		if n > 0 {
 			l = s.Data.Level[n-1]
 		}
-	}
-
-	// calculate watering time
-	wt := 0
-	if hour == s.Config.WaterHour && m <= s.Config.LowLevel {
-		wt = s.calculateWatering(hour, m)
-	}
-	if wt > 0 {
-		wt = s.wuc.DoWatering(wt)
 	}
 
 	// update values
