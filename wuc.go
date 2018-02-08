@@ -14,6 +14,7 @@ const (
 	cmdGetWaterLevel   = 0x11
 	cmdGetLastWatering = 0x12
 	cmdGetWaterLimit   = 0x13
+	cmdEcho            = 0x14
 	cmdWatering        = 0x5A
 )
 
@@ -178,4 +179,27 @@ func (w *Wuc) ReadWateringLimit() (int, error) {
 	}
 
 	return int(l), nil
+}
+
+// Echo sends echo command with data of given buffer and returns result.
+func (w *Wuc) Echo(buf []byte) ([]byte, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	b := make([]byte, len(buf)+1)
+	b[0] = cmdEcho
+	copy(b[1:], buf)
+
+	if _, err := w.connection.Write(b); err != nil {
+		return nil, err
+	}
+
+	n, err := w.connection.Read(b)
+	if err != nil {
+		return nil, err
+	}
+
+	b = b[:n]
+
+	return b, err
 }

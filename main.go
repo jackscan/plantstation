@@ -153,6 +153,7 @@ func main() {
 	http.HandleFunc("/ht", htHandler(&s))
 	http.HandleFunc("/data", dataHandler(&s))
 	http.HandleFunc("/config", auth.JustCheck(authenticator, configHandler(&s)))
+	http.HandleFunc("/echo", echoHandler(&s))
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -537,6 +538,33 @@ func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request
 		defer s.mutex.RUnlock()
 
 		fmt.Fprintf(w, "%v", s.calculateWatering(time.Now().Hour()+1, m))
+	}
+}
+
+func echoHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		d := r.URL.Query()["d"]
+
+		var buf []byte
+
+		for _, s := range d {
+			i, err := strconv.Atoi(s)
+			if err != nil {
+				fmt.Fprintf(w, "invalid parameter %v: %v", s, err)
+				return
+			}
+			buf = append(buf, byte(i))
+		}
+
+		fmt.Fprintf(w, "sending: %v\n", buf)
+
+		buf, err := s.wuc.Echo(buf)
+		if err != nil {
+			fmt.Fprintf(w, "echo failed: %v", err)
+			return
+		}
+
+		fmt.Fprintf(w, "%v", buf)
 	}
 }
 
