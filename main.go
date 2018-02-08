@@ -147,6 +147,7 @@ func main() {
 	http.HandleFunc("/calc", calcWateringHandler(&s))
 	http.HandleFunc("/moist", moistureHandler(&s))
 	http.HandleFunc("/level", waterLevelHandler(&s))
+	http.HandleFunc("/limit", waterLimitHandler(&s))
 	http.HandleFunc("/ht", htHandler(&s))
 	http.HandleFunc("/data", dataHandler(&s))
 	http.HandleFunc("/config", auth.JustCheck(authenticator, configHandler(&s)))
@@ -460,6 +461,19 @@ func waterLevelHandler(s *station) func(w http.ResponseWriter, r *http.Request) 
 		m, err := s.wuc.ReadWaterLevel()
 		if err != nil {
 			log.Println("failed to read water level: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, err)
+			return
+		}
+		fmt.Fprintf(w, "%v", m)
+	}
+}
+
+func waterLimitHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m, err := s.wuc.ReadWateringLimit()
+		if err != nil {
+			log.Println("failed to read watering limit: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprint(w, err)
 			return

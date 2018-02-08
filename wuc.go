@@ -158,3 +158,24 @@ func (w *Wuc) ReadWaterLevel() (l int, err error) {
 
 	return
 }
+
+// ReadWateringLimit sends command to measure water Limit and returns result.
+func (w *Wuc) ReadWateringLimit() (int, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if err := w.connection.WriteByte(cmdGetWaterLimit); err != nil {
+		return 0, err
+	}
+
+	l, err := w.connection.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+
+	if l == 0xFF {
+		return 0, fmt.Errorf("failed to measure water Limit")
+	}
+
+	return int(l), nil
+}
