@@ -130,7 +130,7 @@ func (w *Wuc) ReadLastWatering() (int, error) {
 }
 
 // ReadWaterLevel sends command to measure water level and returns result.
-func (w *Wuc) ReadWaterLevel() (m int, err error) {
+func (w *Wuc) ReadWaterLevel() (l int, err error) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
@@ -154,7 +154,7 @@ func (w *Wuc) ReadWaterLevel() (m int, err error) {
 		return 0, fmt.Errorf("failed to measure water level")
 	}
 
-	m = (int(buf[1]) << 8) | int(buf[0])
+	l = (int(buf[1]) << 8) | int(buf[0])
 
 	return
 }
