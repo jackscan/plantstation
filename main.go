@@ -145,7 +145,7 @@ func main() {
 	// }
 
 	http.Handle("/", http.FileServer(http.Dir("web")))
-	http.HandleFunc("/water", wateringHandler(&s))
+	http.HandleFunc("/water", auth.JustCheck(authenticator, wateringHandler(&s)))
 	http.HandleFunc("/calc", calcWateringHandler(&s))
 	http.HandleFunc("/moist", moistureHandler(&s))
 	http.HandleFunc("/level", waterLevelHandler(&s))
