@@ -14,8 +14,8 @@ const (
 	cmdGetWaterLevel   = 0x11
 	cmdGetLastWatering = 0x12
 	cmdGetWaterLimit   = 0x13
-	cmdEcho            = 0x14
 	cmdWatering        = 0x5A
+	cmdEcho            = 0x99
 )
 
 // A Wuc provides the interface to the Watering Micro Controller.
