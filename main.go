@@ -38,6 +38,7 @@ type station struct {
 
 type measurementData struct {
 	Moisture    []int `json:"moisture"`
+	Weight      []int `json:"weight"`
 	Temperature []int `json:"temperature"`
 	Humidity    []int `json:"humidity"`
 	Watering    []int `json:"water"`
@@ -121,6 +122,7 @@ func main() {
 		Data: measurementData{
 			Time:        time.Now().Hour(),
 			Moisture:    make([]int, 0),
+			Weight:      make([]int, 0),
 			Temperature: make([]int, 0),
 			Humidity:    make([]int, 0),
 			Watering:    make([]int, 0),
@@ -148,6 +150,7 @@ func main() {
 	http.HandleFunc("/water", auth.JustCheck(authenticator, wateringHandler(&s)))
 	http.HandleFunc("/calc", calcWateringHandler(&s))
 	http.HandleFunc("/moist", moistureHandler(&s))
+	http.HandleFunc("/weight", weightHandler(&s))
 	http.HandleFunc("/level", waterLevelHandler(&s))
 	http.HandleFunc("/limit", waterLimitHandler(&s))
 	http.HandleFunc("/ht", htHandler(&s))
@@ -328,6 +331,17 @@ func (s *station) update(hour int) {
 		}
 	}
 
+	w, err := s.wuc.ReadWeight()
+	if err != nil {
+		log.Printf("failed to read weight: %v", err)
+
+		// fallback to last read weight
+		n := len(s.Data.Weight)
+		if n > 0 {
+			m = s.Data.Weight[n-1]
+		}
+	}
+
 	t, h, err := s.sht.Sample()
 	if err != nil {
 		log.Printf("failed to read humidity and temperature: %v", err)
@@ -367,6 +381,7 @@ func (s *station) update(hour int) {
 	s.Data.Time = hour
 	const maxHours = backlogDays * 24
 	s.Data.Moisture = pushSlice(s.Data.Moisture, m, maxHours)
+	s.Data.Weight = pushSlice(s.Data.Weight, w, maxHours)
 	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
 	s.Data.Watering = pushSlice(s.Data.Watering, wt, maxHours)
@@ -481,6 +496,19 @@ func moistureHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprintf(w, "%v", m)
+	}
+}
+
+func weightHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		we, err := s.wuc.ReadWeight()
+		if err != nil {
+			log.Println("failed to read weight: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, err)
+			return
+		}
+		fmt.Fprintf(w, "%v", we)
 	}
 }
 

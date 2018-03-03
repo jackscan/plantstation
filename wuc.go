@@ -14,6 +14,7 @@ const (
 	cmdGetWaterLevel   = 0x11
 	cmdGetLastWatering = 0x12
 	cmdGetWaterLimit   = 0x13
+	cmdGetWeight       = 0x14
 	cmdWatering        = 0x5A
 	cmdEcho            = 0x99
 )
@@ -60,6 +61,36 @@ func (w *Wuc) ReadMoisture() (m int, err error) {
 
 	if buf[1] == 0xFF {
 		return 0, fmt.Errorf("failed to measure soil moisture")
+	}
+
+	m = (int(buf[1]) << 8) | int(buf[0])
+
+	return
+}
+
+// ReadWeight triggers read of weight sensor.
+func (w *Wuc) ReadWeight() (m int, err error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if err = w.connection.WriteByte(cmdGetWeight); err != nil {
+		return
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	var buf [2]byte
+	n, err := w.connection.Read(buf[:])
+	if err != nil {
+		return
+	}
+
+	if n != 2 {
+		return 0, fmt.Errorf("invalid result length: %d", n)
+	}
+
+	if buf[1] == 0xFF {
+		return 0, fmt.Errorf("failed to measure weight")
 	}
 
 	m = (int(buf[1]) << 8) | int(buf[0])
