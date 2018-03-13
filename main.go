@@ -37,7 +37,6 @@ type station struct {
 }
 
 type measurementData struct {
-	Moisture    []int `json:"moisture"`
 	Weight      []int `json:"weight"`
 	Temperature []int `json:"temperature"`
 	Humidity    []int `json:"humidity"`
@@ -121,7 +120,6 @@ func main() {
 		wuc: w,
 		Data: measurementData{
 			Time:        time.Now().Hour(),
-			Moisture:    make([]int, 0),
 			Weight:      make([]int, 0),
 			Temperature: make([]int, 0),
 			Humidity:    make([]int, 0),
@@ -269,7 +267,7 @@ func pushSlice(s []int, v int, maxLen int) []int {
 	return append(s, v)
 }
 
-func (s *station) calculateWatering(hour int, m int) int {
+func (s *station) calculateWatering(hour int, weight int) int {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -288,14 +286,14 @@ func (s *station) calculateWatering(hour int, m int) int {
 
 	log.Printf("last watered %v hours ago", durw+1)
 
-	sum := m
-	for i := len(s.Data.Moisture) - durw; i < len(s.Data.Moisture); i++ {
-		sum += s.Data.Moisture[i]
+	sum := weight
+	for i := len(s.Data.Weight) - durw; i < len(s.Data.Weight); i++ {
+		sum += s.Data.Weight[i]
 	}
 
 	avg := sum / (durw + 1)
 
-	log.Printf("average moisture since last watering: %v", avg)
+	log.Printf("average weight since last watering: %v", avg)
 
 	dl := float32(s.Config.DstLevel - avg)
 	rl := float32(s.Config.LevelRange)
@@ -319,18 +317,6 @@ func clamp(v, min, max int) int {
 
 func (s *station) update(hour int) {
 
-	m, err := s.wuc.ReadMoisture()
-
-	if err != nil {
-		log.Printf("failed to read moisture: %v", err)
-
-		// fallback to last read moisture value
-		n := len(s.Data.Moisture)
-		if n > 0 {
-			m = s.Data.Moisture[n-1]
-		}
-	}
-
 	w, err := s.wuc.ReadWeight()
 	if err != nil {
 		log.Printf("failed to read weight: %v", err)
@@ -338,7 +324,7 @@ func (s *station) update(hour int) {
 		// fallback to last read weight
 		n := len(s.Data.Weight)
 		if n > 0 {
-			m = s.Data.Weight[n-1]
+			w = s.Data.Weight[n-1]
 		}
 	}
 
@@ -358,8 +344,8 @@ func (s *station) update(hour int) {
 
 	// calculate watering time
 	wt := 0
-	if hour == s.Config.WaterHour && m <= s.Config.LowLevel {
-		wt = s.calculateWatering(hour, m)
+	if hour == s.Config.WaterHour && w <= s.Config.LowLevel {
+		wt = s.calculateWatering(hour, w)
 	}
 	if wt > 0 {
 		wt = s.wuc.DoWatering(wt)
@@ -380,7 +366,6 @@ func (s *station) update(hour int) {
 	defer s.mutex.Unlock()
 	s.Data.Time = hour
 	const maxHours = backlogDays * 24
-	s.Data.Moisture = pushSlice(s.Data.Moisture, m, maxHours)
 	s.Data.Weight = pushSlice(s.Data.Weight, w, maxHours)
 	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
