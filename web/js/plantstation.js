@@ -158,31 +158,6 @@ window.onload = function () {
         }
     });
 
-    // function getConfig() {
-    //     var xhttp = new XMLHttpRequest();
-    //     xhttp.onreadystatechange = function () {
-    //         if (this.readyState == 4 && this.status == 200) {
-    //             var resp = JSON.parse(xhttp.responseText);
-    //             var hour = resp[0];
-    //             var minw = resp[1]/1000;
-    //             var maxw = resp[2]/1000;
-    //             var minm = resp[3];
-    //             var dstm = resp[4];
-    //             var dm = dstm - minm;
-    //             chart.options.scales.yAxes[1].ticks.min = Math.floor(minw);
-    //             chart.options.scales.yAxes[1].ticks.max = Math.ceil(maxw);
-    //             chart.options.scales.yAxes[0].ticks.suggestedMin = Math.floor((minm - dm) / 10) * 10;
-    //             chart.options.scales.yAxes[0].ticks.suggestedMax = Math.ceil((dstm + dm * 2) / 10) * 10;
-
-    //             chart.options.horizontalLine.push({y: minm, style: '#ff0000'});
-    //             chart.options.horizontalLine.push({y: dstm, style: '#a0a0a0'});
-
-    //             chart.update();
-    //         }
-    //     };
-    //     xhttp.open("GET", "/config", true);
-    //     xhttp.send();
-    // }
 
     function getData() {
         var xhttp = new XMLHttpRequest();
