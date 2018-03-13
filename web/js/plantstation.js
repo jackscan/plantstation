@@ -158,6 +158,103 @@ window.onload = function () {
         }
     });
 
+    var minchart = new Chart(document.getElementById("minchart"), {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    type: 'line',
+                    data: [],
+                    label: "Plant Weight",
+                    yAxisID: 'weight-y-axis',
+                    borderColor: "#205020",
+                    backgroundColor: "#408040",
+                    fill: false
+                },
+                {
+                    type: 'line',
+                    data: [],
+                    label: "Temperature",
+                    yAxisID: 'temp-y-axis',
+                    borderColor: "#ff8000",
+                    backgroundColor: "#ffa000",
+                    fill: false
+                },
+                {
+                    type: 'line',
+                    data: [],
+                    label: "Humidity",
+                    yAxisID: 'hum-y-axis',
+                    borderColor: "#2080ff",
+                    backgroundColor: "#3090ff",
+                    fill: false
+                },
+                {
+                    type: 'line',
+                    data: [],
+                    label: "Water Level",
+                    yAxisID: 'level-y-axis',
+                    borderColor: "#001080",
+                    backgroundColor: "#0020ff",
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            elements: {
+                line: {
+                    cubicInterpolationMode: 'monotone'
+                }
+            },
+            scales: {
+                xAxes: [{
+                    id: 'min-x-axis',
+                    offset: false,
+                    ticks: {
+                        maxTicksLimit: 48,
+                        maxRotation: 0
+                    },
+                    gridLines: {
+                        offsetGridLines: false
+                    }
+                }],
+                yAxes: [{
+                    id: 'level-y-axis',
+                    type: 'linear',
+                    position: 'left',
+                    ticks: {
+                        suggestedMin: 500,
+                        suggestedMax: 1000
+                    }
+                }, {
+                    id: 'weight-y-axis',
+                    type: 'linear',
+                    position: 'right',
+                    ticks: {
+                        suggestedMin: 5000,
+                        suggestedMax: 10000
+                    }
+                }, {
+                    id: 'temp-y-axis',
+                    type: 'linear',
+                    position: 'right',
+                    ticks: {
+                        suggestedMin: 10,
+                        suggestedMax: 30
+                    }
+                }, {
+                    id: 'hum-y-axis',
+                    type: 'linear',
+                    position: 'right',
+                    ticks: {
+                        suggestedMin: 0,
+                        suggestedMax: 100
+                    }
+                }]
+            }
+        }
+    });
 
     function getData() {
         var xhttp = new XMLHttpRequest();
@@ -213,6 +310,33 @@ window.onload = function () {
                 chart.options.horizontalLine.push({y: config.dst, style: '#40b000'});
 
                 chart.update();
+
+                var mindata = resp.mindata;
+                var mlen = mindata.weight.length;
+                var minstart = (mindata.time + 1 - (mlen % 60) + 60) % 60;
+                var min;
+                for (i = 0; i < mlen; ++i) {
+                    min = (minstart + i) % 60;
+                    minchart.data.labels.push(min);
+                    // minchart.data.datasets[0].data.push(mindata.moisture[i]);
+                    // 4052 is weight value with no load
+                    minchart.data.datasets[0].data.push(mindata.weight[i]);
+                    minchart.data.datasets[1].data.push(mindata.temperature[i] / 100);
+                    minchart.data.datasets[2].data.push(mindata.humidity[i] / 100);
+                    minchart.data.datasets[3].data.push(mindata.level[i]);
+                }
+
+                if (mindata.level[0]) {
+                    minchart.options.scales.yAxes[0].ticks.suggestedMin = Math.floor(mindata.level[0] / 100) * 100;
+                    minchart.options.scales.yAxes[0].ticks.suggestedMax = Math.floor(mindata.level[0] / 100) * 100 + 200;
+                }
+
+                if (mindata.weight[0]) {
+                    minchart.options.scales.yAxes[1].ticks.suggestedMin = Math.floor(mindata.weight[0] / 100) * 100;
+                    minchart.options.scales.yAxes[1].ticks.suggestedMax = Math.floor(mindata.weight[0] / 100) * 100 + 200;
+                }
+
+                minchart.update();
             }
         };
         xhttp.open("GET", "/data", true);

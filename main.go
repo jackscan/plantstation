@@ -23,11 +23,13 @@ import (
 	"gobot.io/x/gobot/platforms/raspi"
 )
 
+const backlogMinutes = 8 * 60
 const backlogDays = 8
 
 type station struct {
-	Data   measurementData `json:"data"`
-	Config waterConfig     `json:"config"`
+	Data    measurementData `json:"data"`
+	MinData measurementData `json:"mindata"`
+	Config  waterConfig     `json:"config"`
 
 	mutex         sync.RWMutex
 	whitelistNets []net.IPNet
@@ -241,7 +243,11 @@ func (s *station) run() {
 	n := time.Now().Add(60 * time.Minute)
 	timer := time.NewTimer(time.Until(time.Date(n.Year(), n.Month(), n.Day(), n.Hour(), 0, 0, 0, n.Location())))
 
+	nm := time.Now().Add(60 * time.Second)
+	mintimer := time.NewTimer(time.Until(time.Date(nm.Year(), nm.Month(), nm.Day(), nm.Hour(), nm.Minute(), 0, 0, nm.Location())))
+
 	tch := timer.C
+	mtch := mintimer.C
 
 	for {
 		select {
@@ -254,6 +260,15 @@ func (s *station) run() {
 			s.update(h)
 			// reset timer to next hour
 			timer.Reset(time.Until(time.Date(n.Year(), n.Month(), n.Day(), n.Hour(), 0, 0, 0, n.Location())))
+
+		case <-mtch:
+			// get current hour
+			m := time.Now().Add(30 * time.Second).Minute()
+			// next hour
+			n := time.Now().Add(90 * time.Second)
+			log.Printf("minute %v", m)
+			s.updateMinute(m)
+			mintimer.Reset(time.Until(time.Date(n.Year(), n.Month(), n.Day(), n.Hour(), n.Minute(), 0, 0, n.Location())))
 		}
 	}
 }
@@ -371,6 +386,52 @@ func (s *station) update(hour int) {
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
 	s.Data.Watering = pushSlice(s.Data.Watering, wt, maxHours)
 	s.Data.Level = pushSlice(s.Data.Level, l, maxHours)
+}
+
+func (s *station) updateMinute(min int) {
+
+	w, err := s.wuc.ReadWeight()
+	if err != nil {
+		log.Printf("failed to read weight: %v", err)
+		// fallback to last read weight
+		n := len(s.MinData.Weight)
+		if n > 0 {
+			w = s.MinData.Weight[n-1]
+		}
+	}
+
+	t, h, err := s.sht.Sample()
+	if err != nil {
+		log.Printf("failed to read humidity and temperature: %v", err)
+		// fallback to last read values
+		n := len(s.MinData.Humidity)
+		if n > 0 {
+			h = float32(s.MinData.Humidity[n-1]) / 100
+		}
+		n = len(s.MinData.Temperature)
+		if n > 0 {
+			t = float32(s.MinData.Temperature[n-1]) / 100
+		}
+	}
+
+	l, err := s.wuc.ReadWaterLevel()
+	if err != nil {
+		log.Printf("failed to read water level: %v", err)
+		// fallback to last read value
+		n := len(s.MinData.Level)
+		if n > 0 {
+			l = s.MinData.Level[n-1]
+		}
+	}
+
+	// update values
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.MinData.Time = min
+	s.MinData.Weight = pushSlice(s.MinData.Weight, w, backlogMinutes)
+	s.MinData.Humidity = pushSlice(s.MinData.Humidity, int(h*100), backlogMinutes)
+	s.MinData.Temperature = pushSlice(s.MinData.Temperature, int(t*100), backlogMinutes)
+	s.MinData.Level = pushSlice(s.MinData.Level, l, backlogMinutes)
 }
 
 func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
