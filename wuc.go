@@ -170,7 +170,7 @@ func (w *Wuc) ReadWaterLevel() (l int, err error) {
 		return
 	}
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(4000 * time.Millisecond)
 
 	var buf [2]byte
 	n, err := w.connection.Read(buf[:])
