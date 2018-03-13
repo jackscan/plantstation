@@ -128,19 +128,19 @@ window.onload = function () {
                 yAxes: [{
                     id: 'water-y-axis',
                     type: 'linear',
-                    position: 'right'
+                    position: 'left'
                 }, {
                     id: 'level-y-axis',
                     type: 'linear',
-                    position: 'right'
+                    position: 'left'
                 }, {
                     id: 'weight-y-axis',
                     type: 'linear',
-                    position: 'left'
+                    position: 'right'
                 }, {
                     id: 'temp-y-axis',
                     type: 'linear',
-                    position: 'left',
+                    position: 'right',
                     ticks: {
                         suggestedMin: 10,
                         suggestedMax: 30
@@ -148,7 +148,7 @@ window.onload = function () {
                 }, {
                     id: 'hum-y-axis',
                     type: 'linear',
-                    position: 'left',
+                    position: 'right',
                     ticks: {
                         suggestedMin: 0,
                         suggestedMax: 100
