@@ -600,7 +600,7 @@ func htHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		m, err := s.wuc.ReadMoisture()
+		we, err := s.wuc.ReadWeight()
 		if err != nil {
 			log.Println("failed to read soil moisture: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -611,7 +611,7 @@ func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request
 		s.mutex.RLock()
 		defer s.mutex.RUnlock()
 
-		fmt.Fprintf(w, "%v", s.calculateWatering(time.Now().Hour()+1, m))
+		fmt.Fprintf(w, "%v", s.calculateWatering(time.Now().Hour()+1, we))
 	}
 }
 
