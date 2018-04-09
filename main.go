@@ -29,7 +29,7 @@ const backlogDays = 8
 type station struct {
 	Data    measurementData `json:"data"`
 	MinData measurementData `json:"mindata"`
-	Config  waterConfig     `json:"config"`
+	Config  [2]waterConfig  `json:"config"`
 
 	mutex         sync.RWMutex
 	whitelistNets []net.IPNet
@@ -39,11 +39,11 @@ type station struct {
 }
 
 type measurementData struct {
-	Weight      []int `json:"weight"`
-	Temperature []int `json:"temperature"`
-	Humidity    []int `json:"humidity"`
-	Watering    []int `json:"water"`
-	Time        int   `json:"time"`
+	Weight      [2][]int `json:"weight"`
+	Temperature []int    `json:"temperature"`
+	Humidity    []int    `json:"humidity"`
+	Watering    [2][]int `json:"water"`
+	Time        int      `json:"time"`
 }
 
 type waterConfig struct {
@@ -109,22 +109,29 @@ func main() {
 				Data:     "/var/opt/plantstation/data.json",
 			},
 		},
-		Config: waterConfig{
+		Config: [2]waterConfig{{
 			WaterHour:  7,
 			MinWater:   2000,
 			MaxWater:   20000,
 			LowLevel:   1400,
 			DstLevel:   1500,
 			LevelRange: 100,
-		},
+		}, {
+			WaterHour:  7,
+			MinWater:   2000,
+			MaxWater:   20000,
+			LowLevel:   1400,
+			DstLevel:   1500,
+			LevelRange: 100,
+		}},
 		sht: i2c.NewSHT3xDriver(r),
 		wuc: w,
 		Data: measurementData{
 			Time:        time.Now().Hour(),
-			Weight:      make([]int, 0),
+			Weight:      [2][]int{make([]int, 0), make([]int, 0)},
 			Temperature: make([]int, 0),
 			Humidity:    make([]int, 0),
-			Watering:    make([]int, 0),
+			Watering:    [2][]int{make([]int, 0), make([]int, 0)},
 		},
 	}
 
@@ -278,43 +285,43 @@ func pushSlice(s []int, v int, maxLen int) []int {
 	return append(s, v)
 }
 
-func (s *station) calculateWatering(hour int, weight int) int {
+func (s *station) calculateWatering(index int, hour int, weight int) int {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	lastw := (s.Config.MinWater + s.Config.MaxWater) / 2
+	lastw := (s.Config[index].MinWater + s.Config[index].MaxWater) / 2
 	durw := 0
 
-	if len(s.Data.Watering) > 0 {
-		for i := len(s.Data.Watering) - 1; i >= 0; i-- {
-			if s.Data.Watering[i] > 0 {
-				lastw = s.Data.Watering[i]
+	if len(s.Data.Watering[index]) > 0 {
+		for i := len(s.Data.Watering[index]) - 1; i >= 0; i-- {
+			if s.Data.Watering[index][i] > 0 {
+				lastw = s.Data.Watering[index][i]
 				break
 			}
-			durw = len(s.Data.Watering) - i
+			durw = len(s.Data.Watering[index]) - i
 		}
 	}
 
 	log.Printf("last watered %v hours ago", durw+1)
 
 	sum := weight
-	for i := len(s.Data.Weight) - durw; i < len(s.Data.Weight); i++ {
-		sum += s.Data.Weight[i]
+	for i := len(s.Data.Weight[index]) - durw; i < len(s.Data.Weight[index]); i++ {
+		sum += s.Data.Weight[index][i]
 	}
 
 	avg := sum / (durw + 1)
 
 	log.Printf("average weight since last watering: %v", avg)
 
-	dl := float32(s.Config.DstLevel - avg)
-	rl := float32(s.Config.LevelRange)
-	rw := float32(s.Config.MaxWater - s.Config.MinWater)
+	dl := float32(s.Config[index].DstLevel - avg)
+	rl := float32(s.Config[index].LevelRange)
+	rw := float32(s.Config[index].MaxWater - s.Config[index].MinWater)
 	dw := dl / rl * rw
 
 	log.Printf("adjusting watering time by %v", dw)
 
 	wt := lastw + int(dw+0.5)
-	return clamp(wt, s.Config.MinWater, s.Config.MaxWater)
+	return clamp(wt, s.Config[index].MinWater, s.Config[index].MaxWater)
 }
 
 func clamp(v, min, max int) int {
@@ -327,15 +334,17 @@ func clamp(v, min, max int) int {
 }
 
 func (s *station) update(hour int) {
-
-	w, err := s.wuc.ReadWeight()
+	var err error
+	w := [2]int{}
+	w[0], w[1], err = s.wuc.ReadWeights()
 	if err != nil {
 		log.Printf("failed to read weight: %v", err)
 
 		// fallback to last read weight
 		n := len(s.Data.Weight)
 		if n > 0 {
-			w = s.Data.Weight[n-1]
+			w[0] = s.Data.Weight[0][n-1]
+			w[1] = s.Data.Weight[1][n-1]
 		}
 	}
 
@@ -354,35 +363,40 @@ func (s *station) update(hour int) {
 	}
 
 	// calculate watering time
-	wt := 0
-	if hour == s.Config.WaterHour && w <= s.Config.LowLevel {
-		wt = s.calculateWatering(hour, w)
+	wt := [2]int{}
+	for i := range wt {
+		if hour == s.Config[i].WaterHour && w[i] <= s.Config[i].LowLevel {
+			wt[i] = s.calculateWatering(i, hour, w[i])
+		}
+		if wt[i] > 0 {
+			wt[i] = s.wuc.DoWatering(i, wt[i])
+		}
 	}
-	if wt > 0 {
-		wt = s.wuc.DoWatering(wt)
-	}
-
 
 	// update values
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.Data.Time = hour
 	const maxHours = backlogDays * 24
-	s.Data.Weight = pushSlice(s.Data.Weight, w, maxHours)
+	for i := range w {
+		s.Data.Weight[i] = pushSlice(s.Data.Weight[i], w[i], maxHours)
+		s.Data.Watering[i] = pushSlice(s.Data.Watering[i], wt[i], maxHours)
+	}
 	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
-	s.Data.Watering = pushSlice(s.Data.Watering, wt, maxHours)
 }
 
 func (s *station) updateMinute(min int) {
-
-	w, err := s.wuc.ReadWeight()
+	var err error
+	w := [2]int{}
+	w[0], w[1], err = s.wuc.ReadWeights()
 	if err != nil {
 		log.Printf("failed to read weight: %v", err)
 		// fallback to last read weight
 		n := len(s.MinData.Weight)
 		if n > 0 {
-			w = s.MinData.Weight[n-1]
+			w[0] = s.MinData.Weight[0][n-1]
+			w[1] = s.MinData.Weight[1][n-1]
 		}
 	}
 
@@ -400,12 +414,13 @@ func (s *station) updateMinute(min int) {
 		}
 	}
 
-
 	// update values
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.MinData.Time = min
-	s.MinData.Weight = pushSlice(s.MinData.Weight, w, backlogMinutes)
+	for i := range w {
+		s.MinData.Weight[i] = pushSlice(s.MinData.Weight[i], w[i], backlogMinutes)
+	}
 	s.MinData.Humidity = pushSlice(s.MinData.Humidity, int(h*100), backlogMinutes)
 	s.MinData.Temperature = pushSlice(s.MinData.Temperature, int(t*100), backlogMinutes)
 }
@@ -427,32 +442,46 @@ func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getRequestIndex(r *http.Request) int {
+	var index int
+	if indexStr, ok := r.URL.Query()["i"]; ok {
+		index, _ = strconv.Atoi(indexStr[0])
+	}
+
+	if index != 1 {
+		index = 0
+	}
+
+	return index
+}
+
 func checkAuth(user, pass string) bool {
 	return user == "user" && pass == "pass"
 }
 
 func configHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		index := getRequestIndex(r)
 		switch r.Method {
 		case http.MethodPut:
-			s.saveConfig(w, r.Body)
+			s.saveConfig(index, w, r.Body)
 		case http.MethodGet:
-			s.sendConfig(w)
+			s.sendConfig(index, w)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	}
 }
 
-func (s *station) saveConfig(w http.ResponseWriter, r io.Reader) {
+func (s *station) saveConfig(index int, w http.ResponseWriter, r io.Reader) {
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	var c waterConfig
-	err = json.Unmarshal(b, &c)
+	c := s.Config
+	err = json.Unmarshal(b, &c[index])
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, err)
@@ -465,15 +494,15 @@ func (s *station) saveConfig(w http.ResponseWriter, r io.Reader) {
 		fmt.Fprint(w, err)
 	}
 
-	s.Config = c
+	s.Config[index] = c[index]
 	fmt.Fprint(w, "config saved")
 }
 
-func (s *station) sendConfig(w http.ResponseWriter) {
+func (s *station) sendConfig(index int, w http.ResponseWriter) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	js, err := json.Marshal(s.Config)
+	js, err := json.Marshal(s.Config[index])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -485,10 +514,11 @@ func (s *station) sendConfig(w http.ResponseWriter) {
 
 func wateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		index := getRequestIndex(r)
 		tq, ok := r.URL.Query()["t"]
 
 		if !ok || len(tq) < 1 {
-			t, err := s.wuc.ReadLastWatering()
+			t, err := s.wuc.ReadLastWatering(index)
 			if err != nil {
 				log.Println("failed to read last watering time: ", err)
 			}
@@ -502,7 +532,7 @@ func wateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Printf("watering %v", t)
-		t = s.wuc.DoWatering(t)
+		t = s.wuc.DoWatering(index, t)
 		log.Printf("watered %v", t)
 		fmt.Fprintf(w, "%v", t)
 	}
@@ -510,20 +540,21 @@ func wateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 
 func weightHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		we, err := s.wuc.ReadWeight()
+		w1, w2, err := s.wuc.ReadWeights()
 		if err != nil {
 			log.Println("failed to read weight: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprint(w, err)
 			return
 		}
-		fmt.Fprintf(w, "%v", we)
+		fmt.Fprintf(w, "%v, %v", w1, w2)
 	}
 }
 
 func waterLimitHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		m, err := s.wuc.ReadWateringLimit()
+		index := getRequestIndex(r)
+		m, err := s.wuc.ReadWateringLimit(index)
 		if err != nil {
 			log.Println("failed to read watering limit: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -549,8 +580,10 @@ func htHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 
 func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		we, err := s.wuc.ReadWeight()
+		index := getRequestIndex(r)
+		var err error
+		var we [2]int
+		we[0], we[1], err = s.wuc.ReadWeights()
 		if err != nil {
 			log.Println("failed to read soil moisture: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -561,7 +594,7 @@ func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request
 		s.mutex.RLock()
 		defer s.mutex.RUnlock()
 
-		fmt.Fprintf(w, "%v", s.calculateWatering(time.Now().Hour()+1, we))
+		fmt.Fprintf(w, "%v", s.calculateWatering(index, time.Now().Hour()+1, we[index]))
 	}
 }
 

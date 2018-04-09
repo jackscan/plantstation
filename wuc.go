@@ -10,13 +10,19 @@ import (
 )
 
 const (
-	cmdGetMoisture     = 0x10
-	cmdGetLastWatering = 0x12
-	cmdGetWaterLimit   = 0x13
-	cmdGetWeight       = 0x14
-	cmdWatering        = 0x5A
-	cmdEcho            = 0x99
+	cmdGetLastWatering = 0x10
+	cmdGetWaterLimit   = 0x11
+	cmdGetWeight       = 0x12
+	cmdWatering        = 0x1A
+	cmdEcho            = 0x29
 )
+
+const cmdShift = 1
+const cmdMask = 0xFF << cmdShift
+
+func consCmd(cmd byte, index int) byte {
+	return (cmd << cmdShift) | (byte)(index & ^cmdMask)
+}
 
 // A Wuc provides the interface to the Watering Micro Controller.
 type Wuc struct {
@@ -37,16 +43,16 @@ func NewWuc(c i2c.Connector) (*Wuc, error) {
 	}, nil
 }
 
-// ReadMoisture triggers read of soil moisture.
-func (w *Wuc) ReadMoisture() (m int, err error) {
+// ReadWeights triggers read of weight sensors.
+func (w *Wuc) ReadWeights() (m1 int, m2 int, err error) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	if err = w.connection.WriteByte(cmdGetMoisture); err != nil {
+	if err = w.connection.WriteByte(consCmd(cmdGetWeight, 0)); err != nil {
 		return
 	}
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond)
 
 	var buf [2]byte
 	n, err := w.connection.Read(buf[:])
@@ -55,50 +61,41 @@ func (w *Wuc) ReadMoisture() (m int, err error) {
 	}
 
 	if n != 2 {
-		return 0, fmt.Errorf("invalid result length: %d", n)
+		return 0, 0, fmt.Errorf("invalid length of result #1: %d", n)
 	}
 
 	if buf[1] == 0xFF {
-		return 0, fmt.Errorf("failed to measure soil moisture")
+		return 0, 0, fmt.Errorf("failed to measure weight #1")
 	}
 
-	m = (int(buf[1]) << 8) | int(buf[0])
+	m1 = (int(buf[1]) << 8) | int(buf[0])
 
-	return
-}
-
-// ReadWeight triggers read of weight sensor.
-func (w *Wuc) ReadWeight() (m int, err error) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
-	if err = w.connection.WriteByte(cmdGetWeight); err != nil {
+	if err = w.connection.WriteByte(consCmd(cmdGetWeight, 1)); err != nil {
 		return
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond)
 
-	var buf [2]byte
-	n, err := w.connection.Read(buf[:])
+	n, err = w.connection.Read(buf[:])
 	if err != nil {
 		return
 	}
 
 	if n != 2 {
-		return 0, fmt.Errorf("invalid result length: %d", n)
+		return 0, 0, fmt.Errorf("invalid length of result #2: %d", n)
 	}
 
 	if buf[1] == 0xFF {
-		return 0, fmt.Errorf("failed to measure weight")
+		return 0, 0, fmt.Errorf("failed to measure weight #2")
 	}
 
-	m = (int(buf[1]) << 8) | int(buf[0])
+	m2 = (int(buf[1]) << 8) | int(buf[0])
 
 	return
 }
 
 // DoWatering sends command for watering.
-func (w *Wuc) DoWatering(ms int) int {
+func (w *Wuc) DoWatering(index, ms int) int {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
@@ -109,7 +106,7 @@ func (w *Wuc) DoWatering(ms int) int {
 	}
 
 	log.Printf("watering %v ms", u*250)
-	cmd := []byte{cmdWatering, byte(u)}
+	cmd := []byte{consCmd(cmdWatering, index), byte(u)}
 
 	n, err := w.connection.Write(cmd)
 	if err != nil {
@@ -140,11 +137,11 @@ func (w *Wuc) DoWatering(ms int) int {
 }
 
 // ReadLastWatering queries duration of last watering and returns time in ms.
-func (w *Wuc) ReadLastWatering() (int, error) {
+func (w *Wuc) ReadLastWatering(index int) (int, error) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	if err := w.connection.WriteByte(cmdGetLastWatering); err != nil {
+	if err := w.connection.WriteByte(consCmd(cmdGetLastWatering, index)); err != nil {
 		return 0, err
 	}
 
@@ -161,11 +158,11 @@ func (w *Wuc) ReadLastWatering() (int, error) {
 }
 
 // ReadWateringLimit sends command to measure water Limit and returns result.
-func (w *Wuc) ReadWateringLimit() (int, error) {
+func (w *Wuc) ReadWateringLimit(index int) (int, error) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	if err := w.connection.WriteByte(cmdGetWaterLimit); err != nil {
+	if err := w.connection.WriteByte(consCmd(cmdGetWaterLimit, index)); err != nil {
 		return 0, err
 	}
 
@@ -187,7 +184,7 @@ func (w *Wuc) Echo(buf []byte) ([]byte, error) {
 	defer w.mutex.Unlock()
 
 	b := make([]byte, len(buf)+1)
-	b[0] = cmdEcho
+	b[0] = consCmd(cmdEcho, 0)
 	copy(b[1:], buf)
 
 	if _, err := w.connection.Write(b); err != nil {
