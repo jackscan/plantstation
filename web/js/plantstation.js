@@ -278,7 +278,6 @@ window.onload = function () {
                     chart.data.datasets[0].data.push(data.weight[i]);
                     chart.data.datasets[1].data.push(data.temperature[i] / 100);
                     chart.data.datasets[2].data.push(data.humidity[i] / 100);
-                    chart.data.datasets[4].data.push(data.level[i]);
                     chart.data.datasets[5].data.push(w / 1000);
                     avg += data.weight[i];
                     ++count;
@@ -326,10 +325,6 @@ window.onload = function () {
                     minchart.data.datasets[3].data.push(mindata.level[i]);
                 }
 
-                if (mindata.level[0]) {
-                    minchart.options.scales.yAxes[0].ticks.suggestedMin = Math.floor(mindata.level[0] / 100) * 100;
-                    minchart.options.scales.yAxes[0].ticks.suggestedMax = Math.floor(mindata.level[0] / 100) * 100 + 200;
-                }
 
                 if (mindata.weight[0]) {
                     minchart.options.scales.yAxes[1].ticks.suggestedMin = Math.floor(mindata.weight[0] / 100) * 100;

@@ -11,7 +11,6 @@ import (
 
 const (
 	cmdGetMoisture     = 0x10
-	cmdGetWaterLevel   = 0x11
 	cmdGetLastWatering = 0x12
 	cmdGetWaterLimit   = 0x13
 	cmdGetWeight       = 0x14
@@ -159,36 +158,6 @@ func (w *Wuc) ReadLastWatering() (int, error) {
 	}
 
 	return int(t) * 250, nil
-}
-
-// ReadWaterLevel sends command to measure water level and returns result.
-func (w *Wuc) ReadWaterLevel() (l int, err error) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
-	if err = w.connection.WriteByte(cmdGetWaterLevel); err != nil {
-		return
-	}
-
-	time.Sleep(4000 * time.Millisecond)
-
-	var buf [2]byte
-	n, err := w.connection.Read(buf[:])
-	if err != nil {
-		return
-	}
-
-	if n != 2 {
-		return 0, fmt.Errorf("invalid result length: %d", n)
-	}
-
-	if buf[1] == 0xFF {
-		return 0, fmt.Errorf("failed to measure water level")
-	}
-
-	l = (int(buf[1]) << 8) | int(buf[0])
-
-	return
 }
 
 // ReadWateringLimit sends command to measure water Limit and returns result.

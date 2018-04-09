@@ -43,7 +43,6 @@ type measurementData struct {
 	Temperature []int `json:"temperature"`
 	Humidity    []int `json:"humidity"`
 	Watering    []int `json:"water"`
-	Level       []int `json:"level"`
 	Time        int   `json:"time"`
 }
 
@@ -126,7 +125,6 @@ func main() {
 			Temperature: make([]int, 0),
 			Humidity:    make([]int, 0),
 			Watering:    make([]int, 0),
-			Level:       make([]int, 0),
 		},
 	}
 
@@ -149,9 +147,7 @@ func main() {
 	http.Handle("/", http.FileServer(http.Dir("web")))
 	http.HandleFunc("/water", auth.JustCheck(authenticator, wateringHandler(&s)))
 	http.HandleFunc("/calc", calcWateringHandler(&s))
-	http.HandleFunc("/moist", moistureHandler(&s))
 	http.HandleFunc("/weight", weightHandler(&s))
-	http.HandleFunc("/level", waterLevelHandler(&s))
 	http.HandleFunc("/limit", waterLimitHandler(&s))
 	http.HandleFunc("/ht", htHandler(&s))
 	http.HandleFunc("/data", dataHandler(&s))
@@ -366,15 +362,6 @@ func (s *station) update(hour int) {
 		wt = s.wuc.DoWatering(wt)
 	}
 
-	l, err := s.wuc.ReadWaterLevel()
-	if err != nil {
-		log.Printf("failed to read water level: %v", err)
-		// fallback to last read value
-		n := len(s.Data.Level)
-		if n > 0 {
-			l = s.Data.Level[n-1]
-		}
-	}
 
 	// update values
 	s.mutex.Lock()
@@ -385,7 +372,6 @@ func (s *station) update(hour int) {
 	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
 	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
 	s.Data.Watering = pushSlice(s.Data.Watering, wt, maxHours)
-	s.Data.Level = pushSlice(s.Data.Level, l, maxHours)
 }
 
 func (s *station) updateMinute(min int) {
@@ -414,15 +400,6 @@ func (s *station) updateMinute(min int) {
 		}
 	}
 
-	l, err := s.wuc.ReadWaterLevel()
-	if err != nil {
-		log.Printf("failed to read water level: %v", err)
-		// fallback to last read value
-		n := len(s.MinData.Level)
-		if n > 0 {
-			l = s.MinData.Level[n-1]
-		}
-	}
 
 	// update values
 	s.mutex.Lock()
@@ -431,7 +408,6 @@ func (s *station) updateMinute(min int) {
 	s.MinData.Weight = pushSlice(s.MinData.Weight, w, backlogMinutes)
 	s.MinData.Humidity = pushSlice(s.MinData.Humidity, int(h*100), backlogMinutes)
 	s.MinData.Temperature = pushSlice(s.MinData.Temperature, int(t*100), backlogMinutes)
-	s.MinData.Level = pushSlice(s.MinData.Level, l, backlogMinutes)
 }
 
 func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
@@ -532,19 +508,6 @@ func wateringHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func moistureHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		m, err := s.wuc.ReadMoisture()
-		if err != nil {
-			log.Println("failed to read soil moisture: ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, err)
-			return
-		}
-		fmt.Fprintf(w, "%v", m)
-	}
-}
-
 func weightHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		we, err := s.wuc.ReadWeight()
@@ -555,19 +518,6 @@ func weightHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprintf(w, "%v", we)
-	}
-}
-
-func waterLevelHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		m, err := s.wuc.ReadWaterLevel()
-		if err != nil {
-			log.Println("failed to read water level: ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprint(w, err)
-			return
-		}
-		fmt.Fprintf(w, "%v", m)
 	}
 }
 
