@@ -488,6 +488,13 @@ func (s *station) saveConfig(index int, w http.ResponseWriter, r io.Reader) {
 		return
 	}
 
+	b, err = json.Marshal(c)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, err)
+		return
+	}
+
 	err = ioutil.WriteFile(s.serverConfig.Files.Watering, b, 0600)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
