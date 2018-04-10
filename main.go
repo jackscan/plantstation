@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"sync"
 	"syscall"
@@ -333,33 +334,66 @@ func clamp(v, min, max int) int {
 	return v
 }
 
+func hourMedian(mindata []int) int {
+	i0 := 0
+	n := len(mindata)
+
+	if n == 0 {
+		panic(fmt.Errorf("empty slice"))
+	}
+
+	if n > 60 {
+		i0 = n - 60
+	}
+	d := make([]int, n-i0)
+	copy(d, mindata[i0:])
+	sort.Ints(d)
+	return d[len(d)/2]
+}
+
 func (s *station) update(hour int) {
 	var err error
 	w := [2]int{}
-	w[0], w[1], err = s.wuc.ReadWeights()
-	if err != nil {
-		log.Printf("failed to read weight: %v", err)
 
-		// fallback to last read weight
-		n := len(s.Data.Weight)
-		if n > 0 {
-			w[0] = s.Data.Weight[0][n-1]
-			w[1] = s.Data.Weight[1][n-1]
+	if len(s.MinData.Weight[0]) == 0 || len(s.MinData.Weight[1]) == 0 {
+		w[0], w[1], err = s.wuc.ReadWeights()
+		if err != nil {
+			log.Printf("failed to read weight: %v", err)
+
+			// fallback to last read weight
+			n := len(s.Data.Weight)
+			if n > 0 {
+				w[0] = s.Data.Weight[0][n-1]
+				w[1] = s.Data.Weight[1][n-1]
+			}
+		}
+	} else {
+		for index := 0; index < 2; index++ {
+			w[index] = hourMedian(s.MinData.Weight[index])
 		}
 	}
 
-	t, h, err := s.sht.Sample()
-	if err != nil {
-		log.Printf("failed to read humidity and temperature: %v", err)
-		// fallback to last read values
-		n := len(s.Data.Humidity)
-		if n > 0 {
-			h = float32(s.Data.Humidity[n-1]) / 100
+	var t, h int
+	if len(s.MinData.Humidity) == 0 || len(s.MinData.Temperature) == 0 {
+		tf, hf, err := s.sht.Sample()
+		if err != nil {
+			log.Printf("failed to read humidity and temperature: %v", err)
+			// fallback to last read values
+			n := len(s.Data.Humidity)
+			if n > 0 {
+				h = s.Data.Humidity[n-1]
+			}
+			n = len(s.Data.Temperature)
+			if n > 0 {
+				t = s.Data.Temperature[n-1]
+			}
+		} else {
+			t = int(tf * 100)
+			h = int(hf * 100)
 		}
-		n = len(s.Data.Temperature)
-		if n > 0 {
-			t = float32(s.Data.Temperature[n-1]) / 100
-		}
+	} else {
+		h = hourMedian(s.MinData.Humidity)
+		t = hourMedian(s.MinData.Temperature)
 	}
 
 	// calculate watering time
@@ -382,8 +416,8 @@ func (s *station) update(hour int) {
 		s.Data.Weight[i] = pushSlice(s.Data.Weight[i], w[i], maxHours)
 		s.Data.Watering[i] = pushSlice(s.Data.Watering[i], wt[i], maxHours)
 	}
-	s.Data.Humidity = pushSlice(s.Data.Humidity, int(h*100), maxHours)
-	s.Data.Temperature = pushSlice(s.Data.Temperature, int(t*100), maxHours)
+	s.Data.Humidity = pushSlice(s.Data.Humidity, h, maxHours)
+	s.Data.Temperature = pushSlice(s.Data.Temperature, t, maxHours)
 }
 
 func (s *station) updateMinute(min int) {
