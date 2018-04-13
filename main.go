@@ -361,10 +361,11 @@ func (s *station) update(hour int) {
 			log.Printf("failed to read weight: %v", err)
 
 			// fallback to last read weight
-			n := len(s.Data.Weight)
-			if n > 0 {
-				w[0] = s.Data.Weight[0][n-1]
-				w[1] = s.Data.Weight[1][n-1]
+			for index := 0; index < 2; index++ {
+				n := len(s.Data.Weight[index])
+				if n > 0 {
+					w[index] = s.Data.Weight[index][n-1]
+				}
 			}
 		}
 	} else {
@@ -398,12 +399,12 @@ func (s *station) update(hour int) {
 
 	// calculate watering time
 	wt := [2]int{}
-	for i := range wt {
-		if hour == s.Config[i].WaterHour && w[i] <= s.Config[i].LowLevel {
-			wt[i] = s.calculateWatering(i, hour, w[i])
+	for index := 0; index < 2; index++ {
+		if hour == s.Config[index].WaterHour && w[index] <= s.Config[index].LowLevel {
+			wt[index] = s.calculateWatering(index, hour, w[index])
 		}
-		if wt[i] > 0 {
-			wt[i] = s.wuc.DoWatering(i, wt[i])
+		if wt[index] > 0 {
+			wt[index] = s.wuc.DoWatering(index, wt[index])
 		}
 	}
 
@@ -427,10 +428,11 @@ func (s *station) updateMinute(min int) {
 	if err != nil {
 		log.Printf("failed to read weight: %v", err)
 		// fallback to last read weight
-		n := len(s.MinData.Weight)
-		if n > 0 {
-			w[0] = s.MinData.Weight[0][n-1]
-			w[1] = s.MinData.Weight[1][n-1]
+		for i := 0; i < 2; i++ {
+			n := len(s.MinData.Weight[i])
+			if n > 0 {
+				w[i] = s.MinData.Weight[i][n-1]
+			}
 		}
 	}
 
@@ -583,7 +585,7 @@ func weightHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w1, w2, err := s.wuc.ReadWeights()
 		if err != nil {
-			log.Println("failed to read weight: ", err)
+			log.Println("failed to read weights: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprint(w, err)
 			return
@@ -626,7 +628,7 @@ func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request
 		var we [2]int
 		we[0], we[1], err = s.wuc.ReadWeights()
 		if err != nil {
-			log.Println("failed to read soil moisture: ", err)
+			log.Println("failed to read weights: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprint(w, err)
 			return
