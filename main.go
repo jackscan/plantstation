@@ -153,6 +153,7 @@ func main() {
 	// }
 
 	http.Handle("/", http.FileServer(http.Dir("web")))
+	http.Handle("/.well-known/acme-challenge/", http.StripPrefix("/.well-known/", http.FileServer(http.Dir(""))))
 	http.HandleFunc("/water", auth.JustCheck(authenticator, wateringHandler(&s)))
 	http.HandleFunc("/calc", calcWateringHandler(&s))
 	http.HandleFunc("/weight", weightHandler(&s))
