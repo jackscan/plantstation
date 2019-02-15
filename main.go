@@ -22,6 +22,8 @@ import (
 	auth "github.com/abbot/go-http-auth"
 	"gobot.io/x/gobot/drivers/i2c"
 	"gobot.io/x/gobot/platforms/raspi"
+
+	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
 const backlogMinutes = 8 * 60
@@ -37,6 +39,8 @@ type station struct {
 	sht           *i2c.SHT3xDriver
 	wuc           *Wuc
 	serverConfig  `json:"-"`
+
+	mqttClient MQTT.Client
 }
 
 type measurementData struct {
@@ -72,10 +76,19 @@ type filesConfig struct {
 	Data     string
 }
 
+type mqttConfig struct {
+	Server   string
+	Topic    string
+	ClientID string
+	User     string
+	Pass     string
+}
+
 type serverConfig struct {
 	HTTPS httpsConfig
 	Login loginConfig
 	Files filesConfig
+	MQTT  mqttConfig
 }
 
 func main() {
@@ -139,6 +152,15 @@ func main() {
 	s.parseServerConfigFile(sconfFile)
 	s.parseWaterConfigFile()
 	s.readData()
+
+	if s.MQTT.Server != "" {
+		connOpts := MQTT.NewClientOptions().AddBroker(s.MQTT.Server)
+		connOpts.SetClientID(s.MQTT.ClientID)
+		connOpts.SetUsername(s.MQTT.User)
+		connOpts.SetPassword(s.MQTT.Pass)
+
+		s.mqttClient = MQTT.NewClient(connOpts)
+	}
 
 	err = s.sht.Start()
 	if err != nil {
@@ -242,6 +264,24 @@ func (s *station) saveData() {
 		log.Fatalf("failed to save measurement data to %s: %v",
 			s.serverConfig.Files.Data, err)
 	}
+}
+
+func (s *station) publish(subtopic string, payload string) error {
+
+	const timeout = time.Second * 10
+
+	if !s.mqttClient.IsConnected() {
+		log.Print("connecting to MQTT broker")
+		if token := s.mqttClient.Connect(); token.WaitTimeout(timeout) && token.Error() != nil {
+			return fmt.Errorf("failed to connect to MQTT broker: %v", token.Error())
+		}
+	}
+
+	if token := s.mqttClient.Publish(s.MQTT.Topic+"/"+subtopic, byte(0), true, payload); token.WaitTimeout(timeout) && token.Error() != nil {
+		return fmt.Errorf("timeout while publishing: %v", token.Error())
+	}
+
+	return nil
 }
 
 func (s *station) run() {
@@ -460,6 +500,11 @@ func (s *station) updateMinute(min int) {
 	}
 	s.MinData.Humidity = pushSlice(s.MinData.Humidity, int(h*100), backlogMinutes)
 	s.MinData.Temperature = pushSlice(s.MinData.Temperature, int(t*100), backlogMinutes)
+
+	s.publish("plant1/weight", fmt.Sprint(w[0]))
+	s.publish("plant2/weight", fmt.Sprint(w[1]))
+	s.publish("humidity", fmt.Sprint(h))
+	s.publish("temperature", fmt.Sprint(t))
 }
 
 func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
