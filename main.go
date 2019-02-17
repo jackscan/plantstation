@@ -77,11 +77,13 @@ type filesConfig struct {
 }
 
 type mqttConfig struct {
-	Server   string
-	Topic    string
-	ClientID string
-	User     string
-	Pass     string
+	Server       string
+	Plant1Topic  string
+	Plant2Topic  string
+	HumTempTopic string
+	ClientID     string
+	User         string
+	Pass         string
 }
 
 type serverConfig struct {
@@ -266,7 +268,7 @@ func (s *station) saveData() {
 	}
 }
 
-func (s *station) publish(subtopic string, payload string) error {
+func (s *station) publish(topic string, qos byte, retained bool, payload string) error {
 
 	const timeout = time.Second * 10
 
@@ -277,7 +279,7 @@ func (s *station) publish(subtopic string, payload string) error {
 		}
 	}
 
-	if token := s.mqttClient.Publish(s.MQTT.Topic+"/"+subtopic, byte(0), true, payload); token.WaitTimeout(timeout) && token.Error() != nil {
+	if token := s.mqttClient.Publish(topic, qos, retained, payload); token.WaitTimeout(timeout) && token.Error() != nil {
 		return fmt.Errorf("timeout while publishing: %v", token.Error())
 	}
 
@@ -501,10 +503,10 @@ func (s *station) updateMinute(min int) {
 	s.MinData.Humidity = pushSlice(s.MinData.Humidity, int(h*100), backlogMinutes)
 	s.MinData.Temperature = pushSlice(s.MinData.Temperature, int(t*100), backlogMinutes)
 
-	s.publish("plant1/weight", fmt.Sprint(w[0]))
-	s.publish("plant2/weight", fmt.Sprint(w[1]))
-	s.publish("humidity", fmt.Sprint(h))
-	s.publish("temperature", fmt.Sprint(t))
+	s.publish(s.MQTT.Plant1Topic+"/weight", byte(0), true, fmt.Sprint(w[0]))
+	s.publish(s.MQTT.Plant2Topic+"/weight", byte(0), true, fmt.Sprint(w[1]))
+	s.publish(s.MQTT.HumTempTopic+"/humidity", byte(0), true, fmt.Sprint(h))
+	s.publish(s.MQTT.HumTempTopic+"/temperature", byte(0), true, fmt.Sprint(t))
 }
 
 func dataHandler(s *station) func(w http.ResponseWriter, r *http.Request) {
