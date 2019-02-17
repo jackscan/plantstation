@@ -451,6 +451,14 @@ func (s *station) update(hour int) {
 		}
 	}
 
+	if wt[0] > 0 {
+		s.publish(s.MQTT.Plant1Topic+"/water", byte(2), false, fmt.Sprint(wt[0]))
+	}
+
+	if wt[1] > 0 {
+		s.publish(s.MQTT.Plant2Topic+"/water", byte(2), false, fmt.Sprint(wt[1]))
+	}
+
 	// update values
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
