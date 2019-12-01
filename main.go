@@ -187,6 +187,17 @@ func main() {
 	http.HandleFunc("/config", auth.JustCheck(authenticator, configHandler(&s)))
 	http.HandleFunc("/echo", echoHandler(&s))
 
+	sigsave := make(chan os.Signal, 1)
+	signal.Notify(sigsave, syscall.SIGUSR1)
+
+	go func() {
+		for {
+			<-sigsave
+			s.saveData()
+			log.Print("data saved")
+		}
+	}()
+
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
