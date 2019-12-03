@@ -3,7 +3,6 @@ srvprefix = /srv
 varprefix = /var/opt
 
 srvdir = $(DESTDIR)$(srvprefix)/plantstation
-servicedir = $(DESTDIR)/etc/systemd/system
 
 srcdir = .
 outdir = .
@@ -11,8 +10,6 @@ outdir = .
 program = plantstation
 
 files = $(DESTDIR)$(prefix)/bin/$(program)
-files += $(patsubst $(srcdir)/service/%,$(DESTDIR)$(prefix)/bin/%,$(wildcard $(srcdir)/service/*.sh))
-files += $(patsubst $(srcdir)/service/%,$(servicedir)/%,$(wildcard $(srcdir)/service/*.service $(srcdir)/service/*.path))
 files += $(DESTDIR)$(varprefix)/plantstation
 files += $(patsubst $(srcdir)/camweb/%,$(srvdir)/camweb/%,$(wildcard $(srcdir)/camweb/*.html))
 files += $(patsubst $(srcdir)/web/%,$(srvdir)/web/%,$(wildcard $(srcdir)/web/*.html))
@@ -40,15 +37,6 @@ $(DESTDIR)$(varprefix)/.well-known/acme-challenge:
 # create link in readonly resource path to writeable folder
 $(srvdir)/acme-challenge:
 	ln -snf $(varprefix)/.well-known/acme-challenge $@
-
-$(DESTDIR)$(prefix)/bin/%.sh: $(srcdir)/service/%.sh
-	install -DTm755 $< $@
-
-$(servicedir)/%.service: $(srcdir)/service/%.service
-	install -DTm644 $< $@
-
-$(servicedir)/%.path: $(srcdir)/service/%.path
-	install -DTm644 $< $@
 
 $(DESTDIR)$(srvprefix)/plantstation/camweb/%.html: $(srcdir)/camweb/%.html
 	install -DTm600 $< $@
