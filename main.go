@@ -30,9 +30,10 @@ const backlogMinutes = 8 * 60
 const backlogDays = 8
 
 type station struct {
-	Data    measurementData `json:"data"`
-	MinData measurementData `json:"mindata"`
-	Config  [2]waterConfig  `json:"config"`
+	Data             measurementData     `json:"data"`
+	MinData          measurementData     `json:"mindata"`
+	Config           [2]plantConfig      `json:"config"`
+	WateringTimeData [2]wateringTimeData `json:"watertime"`
 
 	mutex         sync.RWMutex
 	whitelistNets []net.IPNet
@@ -43,6 +44,11 @@ type station struct {
 	mqttClient MQTT.Client
 }
 
+type wateringTimeData struct {
+	Scale  int `json:"scale"`
+	Offset int `json:"offset"`
+}
+
 type measurementData struct {
 	Weight      [2][]int `json:"weight"`
 	Temperature []int    `json:"temperature"`
@@ -51,9 +57,9 @@ type measurementData struct {
 	Time        int      `json:"time"`
 }
 
-type waterConfig struct {
+type plantConfig struct {
 	WaterHour  int `json:"hour"`
-	MinWater   int `json:"min"`
+	WaterStart int `json:"start"`
 	MaxWater   int `json:"max"`
 	LowLevel   int `json:"low"`
 	DstLevel   int `json:"dst"`
@@ -72,8 +78,9 @@ type httpsConfig struct {
 }
 
 type filesConfig struct {
-	Watering string
-	Data     string
+	Config    string
+	Data      string
+	WaterTime string
 }
 
 type mqttConfig struct {
@@ -121,20 +128,21 @@ func main() {
 				Key:  "localhost.key",
 			},
 			Files: filesConfig{
-				Watering: "/var/opt/plantstation/watering.conf",
-				Data:     "/var/opt/plantstation/data.json",
+				Config:    "/var/opt/plantstation/plant.conf",
+				Data:      "/var/opt/plantstation/data.json",
+				WaterTime: "/var/opt/plantstation/watertime.json",
 			},
 		},
-		Config: [2]waterConfig{{
+		Config: [2]plantConfig{{
 			WaterHour:  7,
-			MinWater:   2000,
+			WaterStart: 2000,
 			MaxWater:   20000,
 			LowLevel:   1400,
 			DstLevel:   1500,
 			LevelRange: 100,
 		}, {
 			WaterHour:  7,
-			MinWater:   2000,
+			WaterStart: 2000,
 			MaxWater:   20000,
 			LowLevel:   1400,
 			DstLevel:   1500,
@@ -152,8 +160,9 @@ func main() {
 	}
 
 	s.parseServerConfigFile(sconfFile)
-	s.parseWaterConfigFile()
+	s.parsePlantConfigFile()
 	s.readData()
+	s.readWateringTime()
 
 	if s.MQTT.Server != "" {
 		connOpts := MQTT.NewClientOptions().AddBroker(s.MQTT.Server)
@@ -194,6 +203,7 @@ func main() {
 		for {
 			<-sigsave
 			s.saveData()
+			s.saveWateringTime()
 			log.Print("data saved")
 		}
 	}()
@@ -215,11 +225,12 @@ func main() {
 	log.Print("shutting down")
 
 	s.saveData()
+	s.saveWateringTime()
 	s.mutex.Lock()
 }
 
-func (s *station) parseWaterConfigFile() {
-	fw := s.serverConfig.Files.Watering
+func (s *station) parsePlantConfigFile() {
+	fw := s.serverConfig.Files.Config
 	b, err := ioutil.ReadFile(fw)
 	if err != nil && os.IsNotExist(err) {
 		log.Printf("watering config %s not found, using default", fw)
@@ -243,6 +254,39 @@ func (s *station) parseServerConfigFile(serverConf string) {
 	err = toml.Unmarshal(b, &s.serverConfig)
 	if err != nil {
 		log.Fatalf("failed to parse server config: %v", err)
+	}
+}
+
+func (s *station) readWateringTime() {
+	b, err := ioutil.ReadFile(s.serverConfig.Files.WaterTime)
+	if err != nil && os.IsNotExist(err) {
+		log.Printf("no old watering time data found at %s",
+			s.serverConfig.Files.WaterTime)
+		return
+	} else if err != nil {
+		log.Fatalf("failed to read watering time data to %s: %v",
+			s.serverConfig.Files.WaterTime, err)
+	}
+
+	err = json.Unmarshal(b, &s.WateringTimeData)
+	if err != nil {
+		log.Fatalf("failed to marshal watering time data: %v", err)
+	}
+}
+
+func (s *station) saveWateringTime() {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	b, err := json.Marshal(s.WateringTimeData)
+	if err != nil {
+		log.Fatalf("failed to marshal watering time data: %v", err)
+	}
+
+	err = ioutil.WriteFile(s.serverConfig.Files.WaterTime, b, 0600)
+	if err != nil {
+		log.Fatalf("failed to save watering time data to %s: %v",
+			s.serverConfig.Files.WaterTime, err)
 	}
 }
 
@@ -340,20 +384,135 @@ func pushSlice(s []int, v int, maxLen int) []int {
 	return append(s, v)
 }
 
-func (s *station) calculateWatering(index int, hour int, weight int) int {
+func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTimeScale, wateringTimeOffset int) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	lastw := (s.Config[index].MinWater + s.Config[index].MaxWater) / 2
+	// cumulative dryout rate
+	dryoutc := 0
+	// number of dryout hours accumulated in dryoutc
+	dryoutn := 0
+	prevw := 0
+	prevm := 0
+	numw := len(s.Data.Watering[index])
+	numm := len(s.Data.Weight[index])
+
+	// number of waterings
+	wn := float32(0)
+	// weight gain sum
+	wgsum := float32(0)
+	// squared sum of weight gain
+	wgsum2 := float32(0)
+	// watering time sum
+	wtsum := float32(0)
+	// dot product of weight gains and watering times
+	wgwtdot := float32(0)
+
+	addWatering := func(wg, wt float32) {
+		wgsum += wg
+		wtsum += wt
+		wgsum2 += wg * wg
+		wgwtdot += wt * wg
+		wn++
+	}
+
+	for i, w := range s.Data.Watering[index] {
+		if numw-i < numm {
+			m := s.Data.Weight[index][numm-numw+i]
+			if prevm > 0 {
+				if prevw > 0 {
+					fw := float32(prevw)
+					wg := float32(m - prevm)
+					addWatering(wg, fw)
+				} else {
+					dryoutc += prevm - m
+					dryoutn++
+				}
+			}
+			prevm = m
+		}
+		prevw = w
+	}
+
+	if s.WateringTimeData[index].Scale > 0 {
+		// add two data points 12.5% around weightgain average calculated from previous data for stable results
+		wgavg := wgsum / wn
+		wg1 := (wgavg - wgavg/8)
+		wg2 := (wgavg + wgavg/8)
+		wt1 := wg1*float32(s.WateringTimeData[index].Scale) +
+			float32(s.WateringTimeData[index].Offset)
+		wt2 := wg2*float32(s.WateringTimeData[index].Scale) +
+			float32(s.WateringTimeData[index].Offset)
+
+		addWatering(wg1, wt1)
+		addWatering(wg2, wt2)
+	}
+
+	if dryoutn > 0 {
+		dryout = dryoutc * 24 / dryoutn
+	} else {
+		log.Println("no dryout meassured")
+		dryout = 0
+	}
+
+	if wn > 0 && wgsum*wgsum < wgsum2*wn {
+		wts := (wgwtdot - wtsum*wgsum/wn) / (wgsum2 - wgsum*wgsum/wn)
+		wateringTimeOffset = int(wtsum/wn - wts*wgsum/wn)
+		wateringTimeScale = int(wts)
+	} else {
+		log.Println("cannot calculate watering times")
+		log.Printf("wn: %v\n", wn)
+		log.Printf("wgsum: %v\n", wgsum)
+		log.Printf("wgsum2: %v\n", wgsum2)
+		log.Printf("wtsum: %v\n", wtsum)
+		log.Printf("wgwtdot: %v\n", wgwtdot)
+
+		// fallback to old settings
+		wateringTimeOffset = s.WateringTimeData[index].Offset
+		wateringTimeScale = s.WateringTimeData[index].Scale
+	}
+
+	// check results
+	if wateringTimeOffset < 0 {
+		// clamp offset to zero, and calculate line through center of mass
+		log.Printf("clamping offset:  %v, %v",
+			wateringTimeScale, wateringTimeOffset)
+		wateringTimeOffset = 0
+		if wgsum > 0 {
+			wateringTimeScale = int(wtsum / wgsum)
+		}
+	} else if wateringTimeScale < 0 {
+		// set offset to half of average watering time,
+		// and calculate line through center of mass
+		log.Printf("clamping scale:  %v, %v",
+			wateringTimeScale, wateringTimeOffset)
+		if wn > 0 {
+			wateringTimeOffset = int(0.5 * wtsum / wn)
+		}
+		wateringTimeScale = int(wtsum * 0.5 / wgsum)
+	}
+
+	return
+}
+
+func (s *station) calculateWatering(index int, hour int, weight int, save bool) int {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	config := &s.Config[index]
+	watering := s.Data.Watering[index]
+	wateringTimeData := &s.WateringTimeData[index]
+
+	// lastw := (config.WaterStart + config.MaxWater) / 2
 	durw := 0
 
-	if len(s.Data.Watering[index]) > 0 {
-		for i := len(s.Data.Watering[index]) - 1; i >= 0; i-- {
-			if s.Data.Watering[index][i] > 0 {
-				lastw = s.Data.Watering[index][i]
+	if len(watering) > 0 {
+		for i := len(watering) - 1; i >= 0; i-- {
+			if watering[i] > 0 {
+				// lastw = watering[i]
 				break
 			}
-			durw = len(s.Data.Watering[index]) - i
+			durw = len(watering) - i
 		}
 	}
 
@@ -368,15 +527,29 @@ func (s *station) calculateWatering(index int, hour int, weight int) int {
 
 	log.Printf("average weight since last watering: %v", avg)
 
-	dl := float32(s.Config[index].DstLevel - avg)
-	rl := float32(s.Config[index].LevelRange)
-	rw := float32(s.Config[index].MaxWater - s.Config[index].MinWater)
-	dw := dl / rl * rw
+	// dryout per 24h, watering time scale, water time offset
+	dryout, wts, wto := s.calculateDryoutAndWateringTime(index)
+	dlvl := config.DstLevel - config.LowLevel
+	if dlvl < 1 {
+		dlvl = 1
+	}
 
-	log.Printf("adjusting watering time by %v", dw)
+	avgDryout := 0
+	if dryout > 0 {
+		avgDryout = ((2*dlvl)/dryout + 1) * dryout / 2
+	}
+	dw := config.DstLevel - weight // + avgDryout
+	wt := wts*dw + wto
 
-	wt := lastw + int(dw+0.5)
-	return clamp(wt, s.Config[index].MinWater, s.Config[index].MaxWater)
+	if save {
+		wateringTimeData.Offset = wto
+		wateringTimeData.Scale = wts
+	}
+
+	log.Printf("dryout: %v, avg dryout: %v, wt scale: %v, wt offset: %v, delta weight: %v", dryout, avgDryout, wts, wto, dw)
+	log.Printf("watering time: %v", wt)
+
+	return clamp(wt, config.WaterStart, config.MaxWater) - wateringTimeData.Offset
 }
 
 func clamp(v, min, max int) int {
@@ -455,7 +628,7 @@ func (s *station) update(hour int) {
 	wt := [2]int{}
 	for index := 0; index < 2; index++ {
 		if hour == s.Config[index].WaterHour && w[index] <= s.Config[index].LowLevel {
-			wt[index] = s.calculateWatering(index, hour, w[index])
+			wt[index] = s.calculateWatering(index, hour, w[index], true)
 		}
 		if wt[index] > 0 {
 			wt[index] = s.wuc.DoWatering(index, wt[index])
@@ -598,7 +771,7 @@ func (s *station) saveConfig(index int, w http.ResponseWriter, r io.Reader) {
 		return
 	}
 
-	err = ioutil.WriteFile(s.serverConfig.Files.Watering, b, 0600)
+	err = ioutil.WriteFile(s.serverConfig.Files.Config, b, 0600)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, err)
@@ -704,7 +877,9 @@ func calcWateringHandler(s *station) func(w http.ResponseWriter, r *http.Request
 		s.mutex.RLock()
 		defer s.mutex.RUnlock()
 
-		fmt.Fprintf(w, "%v", s.calculateWatering(index, time.Now().Hour()+1, we[index]))
+		dryout, wts, wto := s.calculateDryoutAndWateringTime(index)
+
+		fmt.Fprintf(w, "%v %v %v", dryout, wts, wto)
 	}
 }
 

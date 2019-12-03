@@ -48,7 +48,7 @@
                 if (this.readyState == 4 && this.status == 200) {
                     var resp = JSON.parse(xhttp.responseText);
                     document.getElementById("hour").value = resp.hour;
-                    document.getElementById("minw").value = resp.min/1000;
+                    document.getElementById("minw").value = resp.start/1000;
                     document.getElementById("maxw").value = resp.max/1000;
                     document.getElementById("minm").value = resp.low;
                     document.getElementById("dstm").value = resp.dst;
@@ -70,7 +70,7 @@
 
             var data = {
                 hour: Math.round(document.getElementById("hour").value),
-                min: Math.floor(document.getElementById("minw").value * 1000),
+                start: Math.floor(document.getElementById("minw").value * 1000),
                 max: Math.floor(document.getElementById("maxw").value * 1000),
                 low: Math.round(document.getElementById("minm").value),
                 dst: Math.round(document.getElementById("dstm").value),
