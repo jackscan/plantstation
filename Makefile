@@ -11,7 +11,6 @@ program = plantstation
 
 files = $(DESTDIR)$(prefix)/bin/$(program)
 files += $(DESTDIR)$(varprefix)/plantstation
-files += $(patsubst $(srcdir)/camweb/%,$(srvdir)/camweb/%,$(wildcard $(srcdir)/camweb/*.html))
 files += $(patsubst $(srcdir)/web/%,$(srvdir)/web/%,$(wildcard $(srcdir)/web/*.html))
 files += $(patsubst $(srcdir)/web/js/%,$(srvdir)/web/js/%,$(wildcard $(srcdir)/web/js/*.js))
 files += $(DESTDIR)$(varprefix)/.well-known/acme-challenge
@@ -37,9 +36,6 @@ $(DESTDIR)$(varprefix)/.well-known/acme-challenge:
 # create link in readonly resource path to writeable folder
 $(srvdir)/acme-challenge:
 	ln -snf $(varprefix)/.well-known/acme-challenge $@
-
-$(DESTDIR)$(srvprefix)/plantstation/camweb/%.html: $(srcdir)/camweb/%.html
-	install -DTm600 $< $@
 
 $(DESTDIR)$(srvprefix)/plantstation/web/%.html: $(srcdir)/web/%.html
 	install -DTm600 $< $@
