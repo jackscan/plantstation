@@ -13,8 +13,6 @@ files = $(DESTDIR)$(prefix)/bin/$(program)
 files += $(DESTDIR)$(varprefix)/plantstation
 files += $(patsubst $(srcdir)/web/%,$(srvdir)/web/%,$(wildcard $(srcdir)/web/*.html))
 files += $(patsubst $(srcdir)/web/js/%,$(srvdir)/web/js/%,$(wildcard $(srcdir)/web/js/*.js))
-files += $(DESTDIR)$(varprefix)/.well-known/acme-challenge
-files += $(srvdir)/acme-challenge
 
 all: $(outdir)/$(program)
 
@@ -28,14 +26,6 @@ $(DESTDIR)$(prefix)/bin/%: $(outdir)/%
 
 $(DESTDIR)$(varprefix)/plantstation:
 	install -d $@
-
-# create link for certbot in writeable filesystem
-$(DESTDIR)$(varprefix)/.well-known/acme-challenge:
-	install -d $@
-
-# create link in readonly resource path to writeable folder
-$(srvdir)/acme-challenge:
-	ln -snf $(varprefix)/.well-known/acme-challenge $@
 
 $(DESTDIR)$(srvprefix)/plantstation/web/%.html: $(srcdir)/web/%.html
 	install -DTm600 $< $@
