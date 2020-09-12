@@ -487,7 +487,7 @@ func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTim
 		if wgsum > 0 {
 			wateringTimeScale = int(wtsum / wgsum)
 		}
-	} else if wateringTimeScale < 0 {
+	} else if wateringTimeScale < 1 {
 		// set offset to half of average watering time,
 		// and calculate line through center of mass
 		log.Printf("clamping scale:  %v, %v",
