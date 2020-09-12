@@ -509,29 +509,26 @@ func (s *station) calculateWatering(index int, hour int, weight int, save bool) 
 	watering := s.Data.Watering[index]
 	wateringTimeData := &s.WateringTimeData[index]
 
-	// lastw := (config.WaterStart + config.MaxWater) / 2
-	durw := 0
+	lastw := 0
+	durw := 1
 
 	if len(watering) > 0 {
 		for i := len(watering) - 1; i >= 0; i-- {
+			durw = len(watering) - i
 			if watering[i] > 0 {
-				// lastw = watering[i]
+				lastw = watering[i]
 				break
 			}
-			durw = len(watering) - i
 		}
 	}
 
-	log.Printf("last watered %v hours ago", durw+1)
-
-	sum := weight
-	for i := len(s.Data.Weight[index]) - durw; i < len(s.Data.Weight[index]); i++ {
-		sum += s.Data.Weight[index][i]
+	prevw := weight
+	if durw > 1 && len(s.Data.Weight[index]) >= durw {
+		prevw = s.Data.Weight[index][len(s.Data.Weight[index])-durw+1]
 	}
 
-	avg := sum / (durw + 1)
-
-	log.Printf("average weight since last watering: %v", avg)
+	log.Printf("last watered %v hours ago, watered %vs, last weight: %v",
+		durw, lastw, prevw)
 
 	// dryout per 24h, watering time scale, water time offset
 	dryout, wts, wto := s.calculateDryoutAndWateringTime(index)
