@@ -357,17 +357,23 @@ window.onload = function () {
                     { range: '#d0d0d0', low: '#ff1010', dst: '#50c010' },
                 ];
 
-                resp.config.forEach(function(config, i) {
-                    chart.options.scales.yAxes[0].ticks.min = 0;
-                    chart.options.scales.yAxes[0].ticks.max = Math.ceil(config.max / 1000);
-                    chart.options.scales.yAxes[2].ticks.suggestedMin = Math.floor((config.low - config.range * 2) / 10) * 10;
-                    chart.options.scales.yAxes[2].ticks.suggestedMax = Math.ceil((config.dst + config.range * 2) / 10) * 10;
+                var srange = [Infinity, 0];
+                var maxw = 0;
 
+                resp.config.forEach(function(config, i) {
+                    maxw = Math.max(maxw, Math.ceil(config.max / 1000));
+                    srange[0] = Math.min(srange[0], Math.floor((config.low - config.range * 2) / 10) * 10);
+                    srange[1] = Math.max(srange[1], Math.ceil((config.dst + config.range * 2) / 10) * 10);
                     chart.options.horizontalLine.push({y: config.dst-config.range, style: col[i].range});
                     chart.options.horizontalLine.push({y: config.dst+config.range, style: col[i].range});
                     chart.options.horizontalLine.push({y: config.low, style: col[i].low});
                     chart.options.horizontalLine.push({y: config.dst, style: col[i].dst});
                 });
+
+                chart.options.scales.yAxes[0].ticks.min = 0;
+                chart.options.scales.yAxes[0].ticks.max = maxw;
+                chart.options.scales.yAxes[2].ticks.suggestedMin = srange[0];
+                chart.options.scales.yAxes[2].ticks.suggestedMax = srange[1];
 
                 chart.update();
 
