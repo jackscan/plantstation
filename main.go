@@ -388,10 +388,7 @@ func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTim
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	// cumulative dryout rate
-	dryoutc := 0
-	// number of dryout hours accumulated in dryoutc
-	dryoutn := 0
+	dryoutSamples := make([]int, 0, len(s.Data.Weight))
 	prevw := 0
 	prevm := 0
 	numw := len(s.Data.Watering[index])
@@ -425,8 +422,7 @@ func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTim
 					wg := float32(m - prevm)
 					addWatering(wg, fw)
 				} else {
-					dryoutc += prevm - m
-					dryoutn++
+					dryoutSamples = append(dryoutSamples, prevm-m)
 				}
 			}
 			prevm = m
@@ -434,7 +430,7 @@ func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTim
 		prevw = w
 	}
 
-	if s.WateringTimeData[index].Scale > 0 {
+	if s.WateringTimeData[index].Scale > 0 && wn > 0 {
 		// add two data points 12.5% around weightgain average calculated from previous data for stable results
 		wgavg := wgsum / wn
 		wg1 := (wgavg - wgavg/8)
@@ -448,8 +444,18 @@ func (s *station) calculateDryoutAndWateringTime(index int) (dryout, wateringTim
 		addWatering(wg2, wt2)
 	}
 
-	if dryoutn > 0 {
-		dryout = dryoutc * 24 / dryoutn
+	if len(dryoutSamples) > 0 {
+		sort.Ints(dryoutSamples)
+		n := len(dryoutSamples)
+		// we filter one upper and one lower outlier per 6 hours
+		filterBounds := n / 6
+		a := dryoutSamples[filterBounds : n-filterBounds]
+		na := len(a)
+		sum := 0
+		for _, d := range a {
+			sum += d
+		}
+		dryout = (sum*24 + na/2) / na
 	} else {
 		log.Println("no dryout meassured")
 		dryout = 0
